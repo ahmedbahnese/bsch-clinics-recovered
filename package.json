@@ -1,0 +1,10 @@
+{
+  "name": "bsch-clinics-recovered",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Recovered deployable snapshot of the BSCH Clinics booking and waiting-room web app.",
+  "scripts": {
+    "start": "python3 -m http.server 4173 --bind 0.0.0.0",
+    "preview": "python3 -m http.server 4173 --bind 0.0.0.0"
+  }
+}
