@@ -8,3 +8,8 @@ bsch_clinics.sqlite3
 .venv/
 __pycache__/
 *.pyc
+backups/
+*.sqlite3
+!data/bsch_clinics_demo.sqlite3
+
+desktop/windows7-ia32/dist/
