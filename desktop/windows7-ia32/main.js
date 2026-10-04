@@ -1,7 +1,7 @@
 const {app,BrowserWindow,dialog}=require('electron');
 const fs=require('fs');
 const path=require('path');
-const defaultTarget='https://bsch-clinics-6io8.whacka.app/';
+const defaultTarget='http://127.0.0.1:4173/';
 function readTarget(){
   const candidates=[];
   if(process.env.BSCH_SERVER_URL) candidates.push(process.env.BSCH_SERVER_URL);

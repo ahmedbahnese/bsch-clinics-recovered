@@ -12,6 +12,7 @@ backups/
 *.sqlite3
 !data/bsch_clinics_demo.sqlite3
 desktop/windows7-ia32/dist/
+release-build/
 mobile/android/.gradle/
 mobile/android/build/
 mobile/android/app/build/

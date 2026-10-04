@@ -1,1 +1,1 @@
-<resources><string name="app_name">BSCH Clinics</string><string name="server_url">https://bsch-clinics-6io8.whacka.app/</string></resources>
+<resources><string name="app_name">BSCH Clinics</string><string name="server_url">http://127.0.0.1:4173/</string></resources>

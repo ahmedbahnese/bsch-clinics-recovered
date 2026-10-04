@@ -1,8 +1,32 @@
 {
-  "name":"bsch-clinics-windows7-ia32",
-  "version":"1.1.0",
-  "private":true,
-  "main":"main.js",
-  "scripts":{"start":"electron .","package:win32":"electron-packager . BSCHClinics --platform=win32 --arch=ia32 --electron-version=13.6.9 --out=dist --overwrite"},
-  "devDependencies":{"electron":"13.6.9","electron-packager":"15.5.1"}
+  "name": "bsch-clinics-windows7-ia32",
+  "version": "1.1.0",
+  "private": true,
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "package:win32": "electron-packager . BSCHClinics --platform=win32 --arch=ia32 --electron-version=13.6.9 --out=dist --overwrite",
+    "package:installer": "electron-builder --win nsis --ia32"
+  },
+  "devDependencies": {
+    "electron": "13.6.9",
+    "electron-builder": "^24.13.3",
+    "electron-packager": "15.5.1"
+  },
+  "description": "BSCH Clinics Arabic outpatient clinics desktop client",
+  "author": "BSCH Clinics",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ahmedbahnese/bsch-clinics-recovered.git"
+  },
+  "build": {
+    "appId": "com.bsch.clinics.desktop",
+    "productName": "BSCH Clinics",
+    "publish": [],
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false
+    }
+  }
 }

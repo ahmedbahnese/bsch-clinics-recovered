@@ -13,6 +13,7 @@ ROLES = {'founder': 'المؤسس', 'booking': 'موظف الحجز', 'doctor': 
 MANAGERS = {'founder', 'booking'}
 TEMPLATE_VARS = ['patientName','clinicName','clinicDays','workingHours','queueNumber','trackingLink','hospitalName','serviceType','appointmentDate','appointmentTime']
 HOSPITAL = 'مستشفى الأطفال التخصصي بالبحيرة'
+OPERATING_MODES = {'online','hospital_server','standalone_offline'}
 
 CLINIC_SEED = [
  {'name':'عيادة الجهاز الهضمي','location':'الدور الرابع','work_days':'1,5','start_time':'09:00','end_time':'14:00','visit_minutes':15,'daily_limit':75,'services':[{'name':'كشف أول مرة','limit':75},{'name':'متابعة','limit':75}],'documents':'صورة بطاقة الأب والأم + شهادة ميلاد كمبيوتر + تقارير الطفل.','instructions':'الحضور قبل الموعد بربع ساعة وإحضار الأوراق المطلوبة.'},
@@ -47,6 +48,13 @@ def today(): return date.today().isoformat()
 def jloads(v, default=None):
  try:return json.loads(v) if v else (default if default is not None else [])
  except Exception:return default if default is not None else []
+def setting(key, default=''):
+ row=db().execute('SELECT setting_value FROM SystemSettings WHERE setting_key=?',(key,)).fetchone()
+ return row['setting_value'] if row else default
+def current_mode():
+ mode=os.environ.get('BSCH_OPERATING_MODE') or setting('operating_mode','standalone_offline')
+ return mode if mode in OPERATING_MODES else 'standalone_offline'
+def setting_bool(key, default=False): return setting(key,'1' if default else '0')=='1'
 def ensure_col(conn, table, col, typ):
  try: conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {typ}')
  except sqlite3.OperationalError: pass
@@ -55,6 +63,7 @@ def init_db():
  conn=sqlite3.connect(DB_PATH); conn.row_factory=sqlite3.Row; conn.execute('PRAGMA foreign_keys=ON')
  conn.executescript('''
  CREATE TABLE IF NOT EXISTS Users(id INTEGER PRIMARY KEY,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name TEXT NOT NULL,role TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS SystemSettings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL,updated_by INTEGER,updated_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS Clinics(id INTEGER PRIMARY KEY,name TEXT NOT NULL,location TEXT NOT NULL DEFAULT '',work_days TEXT NOT NULL DEFAULT '0,1,2,3,4',start_time TEXT NOT NULL DEFAULT '09:00',end_time TEXT NOT NULL DEFAULT '14:00',visit_minutes INTEGER NOT NULL DEFAULT 15,daily_limit INTEGER NOT NULL DEFAULT 30,active INTEGER NOT NULL DEFAULT 1,services_json TEXT NOT NULL DEFAULT '[]',documents TEXT NOT NULL DEFAULT '',instructions TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS ClinicSchedules(id INTEGER PRIMARY KEY,clinic_id INTEGER NOT NULL REFERENCES Clinics(id) ON DELETE CASCADE,weekday INTEGER NOT NULL,start_time TEXT NOT NULL,end_time TEXT NOT NULL,UNIQUE(clinic_id,weekday));
  CREATE TABLE IF NOT EXISTS ClinicServiceSchedules(id INTEGER PRIMARY KEY,clinic_id INTEGER NOT NULL REFERENCES Clinics(id) ON DELETE CASCADE,service_name TEXT NOT NULL,weekday INTEGER NOT NULL,start_time TEXT NOT NULL,end_time TEXT NOT NULL,daily_limit INTEGER,hourly_limit INTEGER,active INTEGER NOT NULL DEFAULT 1,UNIQUE(clinic_id,service_name,weekday));
@@ -82,6 +91,7 @@ def init_db():
    cur=conn.execute('INSERT INTO Clinics(name,location,work_days,start_time,end_time,visit_minutes,daily_limit,services_json,documents,instructions) VALUES(?,?,?,?,?,?,?,?,?,?)',(c['name'],c['location'],c['work_days'],c['start_time'],c['end_time'],c['visit_minutes'],c['daily_limit'],json.dumps(c['services'],ensure_ascii=False),c['documents'],c['instructions']))
    for wd in map(int,c['work_days'].split(',')): conn.execute('INSERT OR IGNORE INTO ClinicSchedules(clinic_id,weekday,start_time,end_time) VALUES(?,?,?,?)',(cur.lastrowid,wd,c['start_time'],c['end_time']))
  for key,name,body in DEFAULT_TEMPLATES: conn.execute('INSERT OR IGNORE INTO MessageTemplates(template_key,name,body,updated_at) VALUES(?,?,?,?)',(key,name,body,now()))
+ for key,value in [('operating_mode',os.environ.get('BSCH_OPERATING_MODE','standalone_offline')),('online_booking','1'),('external_channels','0'),('ai_validation','0'),('hospital_name',HOSPITAL)]: conn.execute('INSERT OR IGNORE INTO SystemSettings(setting_key,setting_value,updated_at) VALUES(?,?,?)',(key,value,now()))
  conn.commit(); conn.close()
 
 def audit(action,entity,entity_id=None,details=''):
@@ -178,7 +188,7 @@ def fallback_extract(text):
  return out
 def ai_extract(text):
  key=os.environ.get('OPENAI_API_KEY'); base=os.environ.get('OPENAI_API_BASE')
- if not key or not base:return fallback_extract(text), 'fallback'
+ if current_mode() != 'online' or not setting_bool('ai_validation') or not key or not base:return fallback_extract(text), 'local-fallback'
  clinics=[dict(x) for x in db().execute('SELECT id,name,work_days,start_time,end_time,services_json FROM Clinics WHERE active=1')]
  prompt='استخرج بيانات طلب حجز عيادات خارجية فقط. لا تتخذ قراراً طبياً ولا تؤكد الحجز. البيانات المتاحة:\n'+json.dumps(clinics,ensure_ascii=False)+'\nالرسالة:\n'+text
  fields=['patient_name','age','phone','clinic_name','service_type','visit_date','appointment_time','national_id','confidence']
@@ -196,6 +206,22 @@ def missing_fields(parsed):
 def home():return render_template('index.html')
 @app.get('/api/me')
 def me():u=user_row();return jsonify(user=dict(u) if u else None)
+@app.get('/api/runtime')
+def runtime():
+ return jsonify(mode=current_mode(),online_booking=setting_bool('online_booking',True),external_channels=setting_bool('external_channels'),ai_validation=setting_bool('ai_validation'),hospital_name=setting('hospital_name',HOSPITAL),external_services_enabled=current_mode()=='online' and setting_bool('external_channels'))
+@app.get('/api/settings')
+@auth_required(MANAGERS)
+def get_settings():
+ return jsonify(mode=current_mode(),settings={k:setting(k) for k in ['operating_mode','online_booking','external_channels','ai_validation','hospital_name']},modes=[{'id':'online','name':'Online / Cloud','description':'الحجز الخارجي والقنوات والذكاء الاصطناعي عند تفعيلها.'},{'id':'hospital_server','name':'Hospital Server / Local Network','description':'Backend وقاعدة البيانات داخل شبكة المستشفى بدون اعتماد على الإنترنت.'},{'id':'standalone_offline','name':'Standalone Offline','description':'تشغيل محلي على جهاز واحد بدون خادم خارجي أو إنترنت.'}])
+@app.patch('/api/settings')
+@auth_required({'founder'})
+def update_settings():
+ data=request.get_json() or {};mode=data.get('operating_mode',current_mode())
+ if mode not in OPERATING_MODES:return jsonify(error='وضع تشغيل غير صحيح'),400
+ values={'operating_mode':mode,'online_booking':'1' if data.get('online_booking',True) else '0','external_channels':'1' if data.get('external_channels',False) and mode=='online' else '0','ai_validation':'1' if data.get('ai_validation',False) and mode=='online' else '0'}
+ if data.get('hospital_name'):values['hospital_name']=str(data['hospital_name']).strip()
+ for key,value in values.items():db().execute('INSERT INTO SystemSettings(setting_key,setting_value,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=excluded.updated_at',(key,value,session.get('user_id'),now()))
+ db().commit();audit('update_operating_mode','SystemSettings',None,json.dumps(values,ensure_ascii=False));return jsonify(mode=current_mode(),settings=values)
 @app.post('/api/login')
 def login():
  data=request.get_json() or {};u=db().execute('SELECT * FROM Users WHERE username=? AND active=1',(data.get('username',''),)).fetchone()
@@ -355,6 +381,7 @@ def outgoing_result(oid):
 @auth_required(MANAGERS)
 def incoming_message():
  d=request.get_json() or {};text=str(d.get('message_text','')).strip();channel=d.get('channel','manual')
+ if channel in ('whatsapp','telegram') and (current_mode()!='online' or not setting_bool('external_channels')):return jsonify(error='القنوات الخارجية متوقفة في وضع التشغيل الحالي؛ استخدم الحجز الداخلي أو فعّل Online مع صلاحية المدير'),503
  if not text:return jsonify(error='نص الرسالة مطلوب'),400
  parsed,engine=ai_extract(text);missing=missing_fields(parsed);status='needs_data' if missing else 'ready_for_review'
  cur=db().execute('INSERT INTO IncomingMessages(channel,external_id,sender,message_text,parsed_json,missing_json,status,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',(channel,d.get('external_id'),d.get('sender',''),text,json.dumps({**parsed,'engine':engine},ensure_ascii=False),json.dumps(missing,ensure_ascii=False),status,now(),now()));db().commit();audit('receive_message','IncomingMessage',cur.lastrowid,channel)
@@ -421,4 +448,4 @@ def audit_logs():return jsonify(logs=[dict(x) for x in db().execute('SELECT a.*,
 @app.errorhandler(404)
 def not_found(e):return (jsonify(error='المسار غير موجود'),404) if request.path.startswith('/api/') else render_template('index.html')
 init_db()
-if __name__=='__main__':app.run(host='0.0.0.0',port=4173,debug=False)
+if __name__=='__main__':app.run(host=os.environ.get('BSCH_HOST','0.0.0.0'),port=int(os.environ.get('BSCH_PORT','4173')),debug=False)

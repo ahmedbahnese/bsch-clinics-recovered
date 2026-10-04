@@ -92,6 +92,16 @@ python app.py
 | الطبيب | `bschdr` | `bschdr` |
 | التمريض | `bschnurse` | `bschnurse` |
 
+## أوضاع التشغيل Production
+
+يدعم النظام ثلاثة أوضاع يختارها المؤسس من لوحة التحكم أو من `BSCH_OPERATING_MODE`:
+
+- `standalone_offline`: Backend وSQLite على نفس الجهاز، بدون Internet أو خدمات خارجية.
+- `hospital_server`: Backend وقاعدة البيانات على خادم المستشفى، والأجهزة تتصل عبر الشبكة المحلية.
+- `online`: يمكن تفعيل الحجز الخارجي وWhatsApp/Telegram وAI الخارجي اختيارياً؛ الحجز الداخلي لا يتوقف عند تعطيلها.
+
+التفاصيل موجودة في [دليل أوضاع التشغيل](docs/OPERATING_MODES.md) و[دليل التثبيت](docs/INSTALLATION.md).
+
 ## Android
 
 المصدر موجود في `mobile/android/`. نسخة APK الجاهزة موجودة في GitHub Release. عند أول تشغيل سيظهر مربع لإدخال عنوان خادم المستشفى الداخلي، مثل `http://192.168.1.10:4173/`. يلزم أن يكون الهاتف على نفس شبكة المستشفى.
@@ -107,10 +117,13 @@ npm run package:win32
 
 بعد فك الحزمة، انسخ `server-url.example.txt` إلى `server-url.txt` بجوار `BSCHClinics.exe` وضع عنوان السيرفر الداخلي. أو استخدم `BSCH_SERVER_URL` قبل التشغيل. لا يتم تضمين قاعدة بيانات المرضى داخل برنامج Windows.
 
-## الحزم الجاهزة للإصدار 1.1.0
+## الحزم الجاهزة للإصدار 1.2.0
 
 - `BSCHClinics-Android-v1.1.apk`: تطبيق Android موقّع وقابل للتثبيت.
-- `BSCHClinics-win32-ia32.zip`: نسخة Windows 7 ‏32-bit خفيفة.
+- `BSCH Clinics Setup 1.1.0.exe`: Windows Installer فعلي.
+- `BSCHClinics-win32-ia32.zip`: نسخة Windows 7 ‏32-bit محمولة.
+- `BSCHClinics-hospital-server-v1.0.0.tar.gz`: حزمة خادم المستشفى.
+- `BSCHClinics-web-production-v1.0.0.tar.gz`: حزمة Web Production.
 
 ## السيرفر الداخلي للمستشفى
 
@@ -124,7 +137,7 @@ python3 app.py
 
 ## الاختبارات
 
-تم اختبار Python وJavaScript، ترحيل قاعدة SQLite، القوالب والمعاينة والاختبار، تحليل رسائل القنوات، طلب البيانات الناقصة، منع التكرار، إغلاق يوم محدد، التقارير والتصدير، سجل التدقيق، ملفات PWA، بناء APK وتوقيعه، وتغليف Windows 7 ia32.
+تم اختبار Python وJavaScript، ترحيل قاعدة SQLite، القوالب والمعاينة والاختبار، تحليل رسائل القنوات، طلب البيانات الناقصة، منع التكرار، إغلاق يوم محدد، التقارير والتصدير، سجل التدقيق، ملفات PWA، أوضاع Offline/Hospital Server/Online والانتقال بينها، بناء APK وتوقيعه، Windows 7 ia32 وWindows Installer.
 
 ## قواعد البيانات والخصوصية
 
