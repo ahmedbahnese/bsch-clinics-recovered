@@ -1,4 +1,4 @@
-import datetime as dt, os, sys, requests
+import datetime as dt, os, sys, requests, time
 
 BASE = os.environ.get('TEST_BASE_URL', 'http://127.0.0.1:4173')
 s = requests.Session()
@@ -28,7 +28,7 @@ for i in range(200, 400):
     if d.weekday() in days:
         visit = d.isoformat(); break
 assert visit, clinic
-payload = {'patient_name':'اختبار استقلال النظام','age':'10','address':'اختبار','phone':'0109999'+str(dt.date.today().toordinal())[-4:],'national_id':'','clinic_id':clinic['id'],'service_type':(clinic.get('services') or [{'name':'كشف أول مرة'}])[0]['name'],'visit_date':visit,'appointment_time':'09:00'}
+payload = {'patient_name':'اختبار استقلال النظام '+str(int(time.time())),'age':'10','address':'اختبار','phone':'010'+str(int(time.time()))[-8:],'national_id':'','clinic_id':clinic['id'],'service_type':(clinic.get('services') or [{'name':'كشف أول مرة'}])[0]['name'],'visit_date':visit,'appointment_time':'09:00'}
 created = ok(s.post(BASE + '/api/bookings', json=payload), 201)
 assert created['booking']['booking_no']
 dup_payload = dict(payload); dup_payload['appointment_time'] = '14:00'
