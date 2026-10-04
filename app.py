@@ -319,6 +319,11 @@ def internal_booking():
  try:return jsonify(booking=make_booking({**(request.get_json() or {}),'source':'manual'},'manual')),201
  except DuplicateBooking as e:return jsonify(error='يوجد حجز مشابه',duplicates=e.items),409
  except ValueError as e:return jsonify(error=str(e)),400
+@app.get('/api/queue/public')
+def public_queue():
+ rows=db().execute("SELECT q.queue_no,q.state,c.name clinic_name FROM QueueEntries q JOIN Clinics c ON c.id=q.clinic_id WHERE q.clinic_id=? AND q.queue_date=? ORDER BY q.queue_no",(request.args.get('clinic_id'),request.args.get('date',today()))).fetchall()
+ items=[dict(x) for x in rows];called=next((x['queue_no'] for x in items if x['state'] in ('Called','InExam')),None);next_no=next((x['queue_no'] for x in items if x['state']=='Waiting'),None)
+ return jsonify(queue=items,current=called,next=next_no)
 @app.get('/api/queue')
 @auth_required({'booking','doctor','nurse','founder'})
 def queue():
