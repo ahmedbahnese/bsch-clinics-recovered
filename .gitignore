@@ -21,3 +21,4 @@ mobile/android/*-aligned.apk
 mobile/android/*-unsigned.apk
 mobile/android/*.apk.idsig
 mobile/android/BSCHClinics-Android-v*.apk
+mobile/android/BSCHClinics-Android-Offline-v*.apk
