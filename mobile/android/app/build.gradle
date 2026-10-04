@@ -1,5 +1,5 @@
 plugins { id 'com.android.application' }
 
 android { namespace 'com.bsch.clinics'; compileSdk 34
-    defaultConfig { applicationId 'com.bsch.clinics'; minSdk 23; targetSdk 34; versionCode 3; versionName '1.2-offline' }
+    defaultConfig { applicationId 'com.bsch.clinics'; minSdk 23; targetSdk 34; versionCode 4; versionName '1.2.1-offline' }
 }

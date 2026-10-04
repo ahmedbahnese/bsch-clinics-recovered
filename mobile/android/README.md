@@ -33,4 +33,4 @@ bsch
 gradle assembleRelease
 ```
 
-الناتج يكون في `app/build/outputs/apk/release/`. النسخة الجاهزة باسم `BSCHClinics-Android-Offline-v1.2.apk`.
+الناتج يكون في `app/build/outputs/apk/release/`. النسخة الجاهزة باسم `BSCHClinics-Android-Offline-v1.2.1.apk`.
