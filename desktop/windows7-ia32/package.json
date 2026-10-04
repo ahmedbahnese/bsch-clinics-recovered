@@ -1,6 +1,6 @@
 {
   "name":"bsch-clinics-windows7-ia32",
-  "version":"1.0.0",
+  "version":"1.1.0",
   "private":true,
   "main":"main.js",
   "scripts":{"start":"electron .","package:win32":"electron-packager . BSCHClinics --platform=win32 --arch=ia32 --electron-version=13.6.9 --out=dist --overwrite"},
