@@ -1,3 +1,5 @@
 # Backend
 
-التطبيق الرئيسي هو `../app.py`، وقاعدة SQLite محلية. هذا الدليل يعرّف مساحة Backend في بنية Production دون نسخ مصدر قد يؤدي إلى اختلافات. استخدم سكربتات `../scripts/` للتشغيل.
+The canonical independent Backend is `../app.py` and is exposed here as `backend/app.py` for the production repository layout. It uses Flask and SQLite, with server-side roles, audit logging, reports, queue management, templates, scheduling, and mode-aware external integrations.
+
+Run it with `../scripts/standalone-offline.sh`, `../scripts/hospital-server.sh`, or `../scripts/online-server.sh`.

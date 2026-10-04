@@ -13,6 +13,7 @@ backups/
 !data/bsch_clinics_demo.sqlite3
 desktop/windows7-ia32/dist/
 release-build/
+release-build-v1.0.0/
 mobile/android/.gradle/
 mobile/android/build/
 mobile/android/app/build/
@@ -24,3 +25,4 @@ mobile/android/BSCHClinics-Android-v*.apk
 mobile/android/BSCHClinics-Android-Online-v*.apk
 mobile/android/BSCHClinics-Android-Offline-v*.apk
 mobile/android/BSCHClinics-Android-Local-v*.apk
+mobile/android/BSCHClinics-Android-Production-v*.apk

@@ -6,7 +6,7 @@ from zipfile import ZipFile, ZIP_DEFLATED
 from flask import Flask, jsonify, request, session, render_template, g, Response
 
 BASE_DIR = Path(__file__).resolve().parent
-DB_PATH = BASE_DIR / 'bsch_clinics.sqlite3'
+DB_PATH = Path(os.environ.get('BSCH_DB_PATH', str(BASE_DIR / 'bsch_clinics.sqlite3'))).expanduser()
 app = Flask(__name__)
 app.config.update(SECRET_KEY=os.environ.get('BSCH_SECRET_KEY', secrets.token_hex(32)), SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
 ROLES = {'founder': 'المؤسس', 'booking': 'موظف الحجز', 'doctor': 'طبيب', 'nurse': 'تمريض'}

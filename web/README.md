@@ -1,3 +1,3 @@
-# Web
+# Web Production
 
-واجهة Web الإنتاجية موجودة في `../templates/` و`../static/` وتخدمها Flask. هي واجهة عربية RTL متجاوبة وتعمل في الأوضاع Offline وHospital Server وOnline حسب Backend.
+The production frontend is served by the independent Flask Backend from `../templates` and `../static` (symlinked here). It does not depend on Whacka. The frontend talks to the Backend through the current origin; Android and Windows use a configurable Backend URL.
