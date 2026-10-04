@@ -23,3 +23,4 @@ mobile/android/*.apk.idsig
 mobile/android/BSCHClinics-Android-v*.apk
 mobile/android/BSCHClinics-Android-Online-v*.apk
 mobile/android/BSCHClinics-Android-Offline-v*.apk
+mobile/android/BSCHClinics-Android-Local-v*.apk
