@@ -374,8 +374,10 @@ def duplicates():return jsonify(duplicates=similar_bookings(request.args))
 @app.get('/api/bookings/track')
 def track():
  phone=request.args.get('phone','').strip()
- row=db().execute('SELECT b.*,c.name clinic_name,c.location clinic_location,c.work_days clinic_days,c.start_time clinic_start,c.end_time clinic_end,q.queue_no,q.state queue_state FROM Bookings b JOIN Clinics c ON c.id=b.clinic_id LEFT JOIN QueueEntries q ON q.booking_id=b.id AND q.id=(SELECT MAX(id) FROM QueueEntries WHERE booking_id=b.id) WHERE b.phone=? ORDER BY b.id DESC LIMIT 1',(phone,)).fetchone()
- return jsonify(booking=booking_json(row)) if row else (jsonify(error='لم يتم العثور على حجز بهذا الرقم'),404)
+ rows=db().execute('SELECT b.*,c.name clinic_name,c.location clinic_location,c.work_days clinic_days,c.start_time clinic_start,c.end_time clinic_end,q.queue_no,q.state queue_state FROM Bookings b JOIN Clinics c ON c.id=b.clinic_id LEFT JOIN QueueEntries q ON q.booking_id=b.id AND q.id=(SELECT MAX(id) FROM QueueEntries WHERE booking_id=b.id) WHERE b.phone=? ORDER BY b.id DESC LIMIT 50',(phone,)).fetchall()
+ if not rows:return jsonify(error='لم يتم العثور على حجز بهذا الرقم'),404
+ bookings=[booking_json(x) for x in rows]
+ return jsonify(booking=bookings[0],bookings=bookings)
 @app.get('/api/bookings/<int:bid>/confirmation')
 def confirmation(bid):
  row=booking_row(bid)
