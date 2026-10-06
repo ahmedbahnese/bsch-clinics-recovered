@@ -336,7 +336,11 @@ def update_clinic(cid):
  data=request.get_json() or {};allowed={k:data[k] for k in ['name','location','work_days','start_time','end_time','visit_minutes','daily_limit','direct_booking','documents','instructions','active'] if k in data}
  if 'services' in data:allowed['services_json']=json.dumps(data['services'],ensure_ascii=False)
  if not allowed:return jsonify(error='لا توجد تغييرات'),400
- sql=','.join(f'{k}=?' for k in allowed);db().execute(f'UPDATE Clinics SET {sql} WHERE id=?',[*allowed.values(),cid]);db().commit();audit('update_clinic','Clinic',cid,json.dumps(data,ensure_ascii=False));return jsonify(clinic=clinic_dict(db().execute('SELECT * FROM Clinics WHERE id=?',(cid,)).fetchone()))
+ sql=','.join(f'{k}=?' for k in allowed);db().execute(f'UPDATE Clinics SET {sql} WHERE id=?',[*allowed.values(),cid]);affected=[]
+ if 'work_days' in data:
+  allowed_days={int(x) for x in str(data['work_days']).split(',') if str(x).strip().isdigit()}
+  affected=[dict(x) for x in db().execute("SELECT b.id,b.booking_no,b.patient_name,b.phone,b.visit_date,b.appointment_time,b.status,c.name clinic_name FROM Bookings b JOIN Clinics c ON c.id=b.clinic_id WHERE b.clinic_id=? AND b.visit_date>=? AND b.status NOT IN ('Cancelled','NoShow')",(cid,today())).fetchall() if date.fromisoformat(x['visit_date']).weekday() not in allowed_days]
+ db().commit();audit('update_clinic','Clinic',cid,json.dumps(data,ensure_ascii=False));return jsonify(clinic=clinic_dict(db().execute('SELECT * FROM Clinics WHERE id=?',(cid,)).fetchone()),affected_bookings=affected)
 @app.get('/api/clinics/<int:cid>/schedule')
 @auth_required(MANAGERS)
 def clinic_schedule(cid):return jsonify(closures=[dict(x) for x in db().execute('SELECT * FROM ClinicClosures WHERE clinic_id=? ORDER BY closure_date',(cid,))],service_schedules=[dict(x) for x in db().execute('SELECT * FROM ClinicServiceSchedules WHERE clinic_id=? ORDER BY service_name,weekday',(cid,))],doctors=[dict(x) for x in db().execute('SELECT * FROM ClinicDoctors WHERE clinic_id=? ORDER BY weekday,doctor_name',(cid,))])
@@ -345,7 +349,7 @@ def clinic_schedule(cid):return jsonify(closures=[dict(x) for x in db().execute(
 def closure(cid):
  d=request.get_json() or {};day=d.get('closure_date','')
  if not day:return jsonify(error='تاريخ الإغلاق مطلوب'),400
- db().execute('INSERT INTO ClinicClosures(clinic_id,closure_date,reason,created_by,created_at) VALUES(?,?,?,?,?) ON CONFLICT(clinic_id,closure_date) DO UPDATE SET reason=excluded.reason',(cid,day,d.get('reason',''),session.get('user_id'),now()));db().commit();audit('close_clinic_day','Clinic',cid,day);return jsonify(ok=True)
+ db().execute('INSERT INTO ClinicClosures(clinic_id,closure_date,reason,created_by,created_at) VALUES(?,?,?,?,?) ON CONFLICT(clinic_id,closure_date) DO UPDATE SET reason=excluded.reason',(cid,day,d.get('reason',''),session.get('user_id'),now()));affected=[dict(x) for x in db().execute("SELECT id,booking_no,patient_name,phone,visit_date,appointment_time,status FROM Bookings WHERE clinic_id=? AND visit_date=? AND status NOT IN ('Cancelled','NoShow')",(cid,day)).fetchall()];db().commit();audit('close_clinic_day','Clinic',cid,day);return jsonify(ok=True,affected_bookings=affected)
 @app.delete('/api/clinics/<int:cid>/closures/<day>')
 @auth_required(MANAGERS)
 def remove_closure(cid,day):db().execute('DELETE FROM ClinicClosures WHERE clinic_id=? AND closure_date=?',(cid,day));db().commit();audit('open_clinic_day','Clinic',cid,day);return jsonify(ok=True)
