@@ -254,6 +254,29 @@ def change_account_password():
  audit('change_password','User',u['id'],f'تغيير كلمة مرور الحساب {u["username"]}')
  return jsonify(ok=True,message='تم تغيير كلمة المرور بنجاح')
 
+@app.get('/api/users')
+@auth_required({'founder'})
+def users_list():
+ return jsonify(users=[dict(x) for x in db().execute("SELECT id,username,display_name,role,active,created_at FROM Users ORDER BY id")])
+@app.post('/api/users')
+@auth_required({'founder'})
+def user_create():
+ d=request.get_json() or {}; username=str(d.get('username','')).strip(); password=str(d.get('password','')); name=str(d.get('display_name','')).strip(); role=str(d.get('role','booking'))
+ if not username or len(password)<6 or not name or role not in ROLES:return jsonify(error='اسم المستخدم والاسم وكلمة مرور 6 أحرف والدور مطلوبة'),400
+ try:
+  cur=db().execute('INSERT INTO Users(username,password_hash,display_name,role,active,created_at) VALUES(?,?,?,?,1,?)',(username,hash_password(password),name,role,now()));db().commit();audit('create_user','User',cur.lastrowid,username);return jsonify(user=dict(db().execute('SELECT id,username,display_name,role,active,created_at FROM Users WHERE id=?',(cur.lastrowid,)).fetchone())),201
+ except sqlite3.IntegrityError:return jsonify(error='اسم المستخدم مستخدم بالفعل'),409
+@app.patch('/api/users/<int:uid>')
+@auth_required({'founder'})
+def user_update(uid):
+ d=request.get_json() or {}; fields=[];args=[]
+ for key in ('display_name','role','active'):
+  if key in d: fields.append(key+'=?');args.append(d[key])
+ if d.get('password'):
+  if len(str(d['password']))<6:return jsonify(error='كلمة المرور يجب أن تكون 6 أحرف على الأقل'),400
+  fields.append('password_hash=?');args.append(hash_password(d['password']))
+ if not fields:return jsonify(error='لا توجد تغييرات'),400
+ args.append(uid);db().execute('UPDATE Users SET '+','.join(fields)+' WHERE id=?',args);db().commit();audit('update_user','User',uid);return jsonify(ok=True)
 @app.post('/api/login')
 def login():
  data=request.get_json() or {};u=db().execute('SELECT * FROM Users WHERE username=? AND active=1',(data.get('username',''),)).fetchone()
@@ -266,6 +289,21 @@ def clinics():return jsonify(clinics=[clinic_dict(x) for x in db().execute('SELE
 @app.get('/api/clinics/all')
 @auth_required(MANAGERS)
 def clinics_all():return jsonify(clinics=[clinic_dict(x) for x in db().execute('SELECT * FROM Clinics ORDER BY id')])
+@app.get('/api/clinics/<int:cid>/availability')
+def clinic_availability(cid):
+ clinic=db().execute('SELECT * FROM Clinics WHERE id=? AND active=1',(cid,)).fetchone()
+ if not clinic:return jsonify(error='العيادة غير متاحة'),404
+ from datetime import date as date_type
+ start=date_type.today(); items=[]
+ for offset in range(0,75):
+  day=start+timedelta(days=offset); day_s=day.isoformat()
+  if str(day.weekday()) not in [x.strip() for x in clinic['work_days'].split(',')]:continue
+  if db().execute('SELECT 1 FROM ClinicClosures WHERE clinic_id=? AND closure_date=?',(cid,day_s)).fetchone():continue
+  total=db().execute("SELECT COUNT(*) FROM Bookings WHERE clinic_id=? AND visit_date=? AND status NOT IN ('Cancelled','NoShow')",(cid,day_s)).fetchone()[0]
+  if total>=int(clinic['daily_limit']):continue
+  items.append({'date':day_s,'weekday':day.strftime('%A'),'weekday_ar':['الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد'][day.weekday()],'label':day.strftime('%d/%m'),'remaining':max(0,int(clinic['daily_limit'])-total)})
+  if len(items)>=30:break
+ return jsonify(clinic=clinic_dict(clinic),dates=items)
 @app.post('/api/clinics')
 @auth_required(MANAGERS)
 def create_clinic():
@@ -311,7 +349,9 @@ def create_booking():
 def duplicates():return jsonify(duplicates=similar_bookings(request.args))
 @app.get('/api/bookings/track')
 def track():
- row=db().execute('SELECT b.*,c.name clinic_name,c.location clinic_location,c.work_days clinic_days,c.start_time clinic_start,c.end_time clinic_end,q.queue_no,q.state queue_state FROM Bookings b JOIN Clinics c ON c.id=b.clinic_id LEFT JOIN QueueEntries q ON q.booking_id=b.id AND q.id=(SELECT MAX(id) FROM QueueEntries WHERE booking_id=b.id) WHERE b.phone=? AND b.booking_no=?',(request.args.get('phone','').strip(),request.args.get('booking_no','').strip())).fetchone();return jsonify(booking=booking_json(row)) if row else (jsonify(error='لم يتم العثور على الحجز'),404)
+ phone=request.args.get('phone','').strip()
+ row=db().execute('SELECT b.*,c.name clinic_name,c.location clinic_location,c.work_days clinic_days,c.start_time clinic_start,c.end_time clinic_end,q.queue_no,q.state queue_state FROM Bookings b JOIN Clinics c ON c.id=b.clinic_id LEFT JOIN QueueEntries q ON q.booking_id=b.id AND q.id=(SELECT MAX(id) FROM QueueEntries WHERE booking_id=b.id) WHERE b.phone=? ORDER BY b.id DESC LIMIT 1',(phone,)).fetchone()
+ return jsonify(booking=booking_json(row)) if row else (jsonify(error='لم يتم العثور على حجز بهذا الرقم'),404)
 @app.get('/api/bookings/<int:bid>/confirmation')
 def confirmation(bid):
  row=booking_row(bid)
