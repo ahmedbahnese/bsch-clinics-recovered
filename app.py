@@ -93,15 +93,35 @@ def init_db():
   for c in CLINIC_SEED:
    cur=conn.execute('INSERT INTO Clinics(name,location,work_days,start_time,end_time,visit_minutes,daily_limit,services_json,documents,instructions) VALUES(?,?,?,?,?,?,?,?,?,?)',(c['name'],c['location'],c['work_days'],c['start_time'],c['end_time'],c['visit_minutes'],c['daily_limit'],json.dumps(c['services'],ensure_ascii=False),c['documents'],c['instructions']))
    for wd in map(int,c['work_days'].split(',')): conn.execute('INSERT OR IGNORE INTO ClinicSchedules(clinic_id,weekday,start_time,end_time) VALUES(?,?,?,?)',(cur.lastrowid,wd,c['start_time'],c['end_time']))
- for seed in CLINIC_SEED:
-  row=conn.execute('SELECT id FROM Clinics WHERE name=?',(seed['name'],)).fetchone()
-  if row:
-   cid=row[0]
-   conn.execute('UPDATE Clinics SET location=?,work_days=?,start_time=?,end_time=?,visit_minutes=?,daily_limit=?,services_json=?,documents=?,instructions=? WHERE id=?',(seed['location'],seed['work_days'],seed['start_time'],seed['end_time'],seed['visit_minutes'],seed['daily_limit'],json.dumps(seed['services'],ensure_ascii=False),seed['documents'],seed['instructions'],cid))
-   conn.execute('DELETE FROM ClinicSchedules WHERE clinic_id=?',(cid,))
-   for wd in map(int,seed['work_days'].split(',')): conn.execute('INSERT OR IGNORE INTO ClinicSchedules(clinic_id,weekday,start_time,end_time) VALUES(?,?,?,?)',(cid,wd,seed['start_time'],seed['end_time']))
  for key,name,body in DEFAULT_TEMPLATES: conn.execute('INSERT OR IGNORE INTO MessageTemplates(template_key,name,body,updated_at) VALUES(?,?,?,?)',(key,name,body,now()))
  for key,value in [('operating_mode',os.environ.get('BSCH_OPERATING_MODE','standalone_offline')),('online_booking','1'),('external_channels','0'),('ai_validation','0'),('hospital_name',HOSPITAL)]: conn.execute('INSERT OR IGNORE INTO SystemSettings(setting_key,setting_value,updated_at) VALUES(?,?,?)',(key,value,now()))
+ if not conn.execute("SELECT 1 FROM SystemSettings WHERE setting_key='clinic_content_v2'").fetchone():
+  echo_instr='''الحضور الساعة 8:30 صباحًا أمام عيادة القلب بالدور الرابع.
+للأطفال من 6 شهور حتى 3 سنوات: قد يُطلب تجهيز الطفل بمادة كلورال هيدرات تحت إشراف طبيب عيادة القلب حسب الحالة.
+يجب أن يكون الطفل خاليًا من أعراض البرد.
+إيقاظ الطفل مبكرًا وعدم السماح له بالنوم في الطريق حتى يمكنه النوم أثناء الفحص عند الحاجة.'''
+  audio_instr='''شروط رسم السمع الكمبيوتر:
+- العمر أقل من 5 سنوات وأكبر من 3 شهور.
+- حالات التأخر العقلي أو تأخر الكلام مستثناة من شرط العمر ويمكن أن تكون أكبر من 5 سنوات.
+- يجب التأكد من عدم وجود كحة أو رشح/نزلة برد أو ارتفاع درجة الحرارة.
+
+تعليمات رسم السمع الإلكتروني:
+- ليلة الاختبار: نوم الطفل الساعة 12 مساءً وإيقاظه الساعة 4 فجرًا وعدم السماح له بالنوم حتى الوصول للمستشفى وتهيئته للاختبار.
+- في اليوم السابق للاختبار: غسل الرأس جيدًا بالماء والصابون.
+- عدم وضع كريم على الشعر أو البشرة يوم الاختبار.
+- الحضور للمستشفى مبكرًا وبحد أقصى الساعة 8:30 صباحًا.
+- إحضار كلورال هيدرات إذا قرر الطبيب استخدامه، ويُعطى فقط تحت إشراف طبي.'''
+  conn.execute("UPDATE Clinics SET instructions=?,documents=? WHERE name='عيادة الإيكو'",(echo_instr,''))
+  audio=conn.execute("SELECT id,services_json FROM Clinics WHERE name='عيادة السمعيات'").fetchone()
+  if audio:
+   services=jloads(audio['services_json'])
+   for item in services:
+    if item.get('name')=='رسم سمع كمبيوتر (جذع المخ)': item['limit']=3; item['instructions']=audio_instr
+    elif item.get('name')=='رسم سمع (5 سنوات فأكثر)': item['limit']=5; item['instructions']=audio_instr
+    elif item.get('name')=='حالات ضغط الأذن': item['direct_only']=True
+    elif item.get('name')=='حالات محولة (مبادرة السمع)': item['direct_only']=True
+   conn.execute('UPDATE Clinics SET work_days=?,daily_limit=?,services_json=? WHERE id=?',('6,0,1,2,3,4',0,json.dumps(services,ensure_ascii=False),audio['id']))
+  conn.execute("INSERT INTO SystemSettings(setting_key,setting_value,updated_at) VALUES('clinic_content_v2','1',?)",(now(),))
  conn.commit(); conn.close()
 
 def audit(action,entity,entity_id=None,details=''):
@@ -356,7 +376,8 @@ def track():
 def confirmation(bid):
  row=booking_row(bid)
  if not row:return jsonify(error='الحجز غير موجود'),404
- return jsonify(booking=booking_json(row),instructions=row['instructions_snapshot'].splitlines(),documents=row['documents_snapshot'])
+ if row['status']!='Confirmed':return jsonify(error='لم يتم تأكيد الحجز بعد'),409
+ return jsonify(booking=booking_json(row),instructions=row['instructions_snapshot'].splitlines(),documents=row['documents_snapshot'],status_label='مؤكد')
 @app.get('/api/bookings')
 @auth_required({'booking','doctor','nurse','founder'})
 def list_bookings():
