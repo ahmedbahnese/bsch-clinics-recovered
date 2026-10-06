@@ -64,7 +64,7 @@ def init_db():
  conn.executescript('''
  CREATE TABLE IF NOT EXISTS Users(id INTEGER PRIMARY KEY,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name TEXT NOT NULL,role TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS SystemSettings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL,updated_by INTEGER,updated_at TEXT NOT NULL);
- CREATE TABLE IF NOT EXISTS Clinics(id INTEGER PRIMARY KEY,name TEXT NOT NULL,location TEXT NOT NULL DEFAULT '',work_days TEXT NOT NULL DEFAULT '0,1,2,3,4',start_time TEXT NOT NULL DEFAULT '09:00',end_time TEXT NOT NULL DEFAULT '14:00',visit_minutes INTEGER NOT NULL DEFAULT 15,daily_limit INTEGER NOT NULL DEFAULT 30,active INTEGER NOT NULL DEFAULT 1,services_json TEXT NOT NULL DEFAULT '[]',documents TEXT NOT NULL DEFAULT '',instructions TEXT NOT NULL DEFAULT '');
+ CREATE TABLE IF NOT EXISTS Clinics(id INTEGER PRIMARY KEY,name TEXT NOT NULL,location TEXT NOT NULL DEFAULT '',work_days TEXT NOT NULL DEFAULT '0,1,2,3,4',start_time TEXT NOT NULL DEFAULT '09:00',end_time TEXT NOT NULL DEFAULT '14:00',visit_minutes INTEGER NOT NULL DEFAULT 15,daily_limit INTEGER NOT NULL DEFAULT 30,active INTEGER NOT NULL DEFAULT 1,direct_booking INTEGER NOT NULL DEFAULT 0,services_json TEXT NOT NULL DEFAULT '[]',documents TEXT NOT NULL DEFAULT '',instructions TEXT NOT NULL DEFAULT '');
  CREATE TABLE IF NOT EXISTS ClinicSchedules(id INTEGER PRIMARY KEY,clinic_id INTEGER NOT NULL REFERENCES Clinics(id) ON DELETE CASCADE,weekday INTEGER NOT NULL,start_time TEXT NOT NULL,end_time TEXT NOT NULL,UNIQUE(clinic_id,weekday));
  CREATE TABLE IF NOT EXISTS ClinicServiceSchedules(id INTEGER PRIMARY KEY,clinic_id INTEGER NOT NULL REFERENCES Clinics(id) ON DELETE CASCADE,service_name TEXT NOT NULL,weekday INTEGER NOT NULL,start_time TEXT NOT NULL,end_time TEXT NOT NULL,daily_limit INTEGER,hourly_limit INTEGER,active INTEGER NOT NULL DEFAULT 1,UNIQUE(clinic_id,service_name,weekday));
  CREATE TABLE IF NOT EXISTS ClinicClosures(id INTEGER PRIMARY KEY,clinic_id INTEGER NOT NULL REFERENCES Clinics(id) ON DELETE CASCADE,closure_date TEXT NOT NULL,reason TEXT NOT NULL DEFAULT '',created_by INTEGER,created_at TEXT NOT NULL,UNIQUE(clinic_id,closure_date));
@@ -80,7 +80,7 @@ def init_db():
  CREATE TABLE IF NOT EXISTS OutgoingMessages(id INTEGER PRIMARY KEY,channel TEXT NOT NULL,recipient TEXT NOT NULL DEFAULT '',message_text TEXT NOT NULL,template_key TEXT,booking_id INTEGER,status TEXT NOT NULL DEFAULT 'queued',error TEXT NOT NULL DEFAULT '',attempts INTEGER NOT NULL DEFAULT 0,sent_at TEXT,created_at TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS idx_bookings_phone ON Bookings(phone); CREATE INDEX IF NOT EXISTS idx_bookings_duplicate ON Bookings(patient_name,phone,clinic_id,visit_date); CREATE INDEX IF NOT EXISTS idx_queue_day ON QueueEntries(clinic_id,queue_date);
  ''')
- for col,typ in [('services_json',"TEXT NOT NULL DEFAULT '[]'"),('documents',"TEXT NOT NULL DEFAULT ''"),('instructions',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Clinics',col,typ)
+ for col,typ in [('direct_booking','INTEGER NOT NULL DEFAULT 0'),('services_json',"TEXT NOT NULL DEFAULT '[]'"),('documents',"TEXT NOT NULL DEFAULT ''"),('instructions',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Clinics',col,typ)
  ensure_col(conn,'ClinicServiceSchedules','hourly_limit','INTEGER')
  for col,typ in [('age',"TEXT NOT NULL DEFAULT ''"),('address',"TEXT NOT NULL DEFAULT ''"),('national_id',"TEXT NOT NULL DEFAULT ''"),('service_type',"TEXT NOT NULL DEFAULT ''"),('source',"TEXT NOT NULL DEFAULT 'system'"),('instructions_snapshot',"TEXT NOT NULL DEFAULT ''"),('documents_snapshot',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Bookings',col,typ)
  for u,p,n,r in [('Bahnasy','Bahnasy','Ahmed Bahnasy','founder'),('bsch','bsch','موظف الحجز','booking'),('belal','c4e56e5231','بلال — موظف حجز','booking'),('bschdr','bschdr','الطبيب','doctor'),('bschnurse','bschnurse','التمريض','nurse')]: conn.execute('INSERT OR IGNORE INTO Users(username,password_hash,display_name,role,created_at) VALUES(?,?,?,?,?)',(u,hash_password(p),n,r,now()))
@@ -166,11 +166,11 @@ def make_booking(data,source='system',allow_duplicate=False):
  duplicates=similar_bookings(data)
  if duplicates and not allow_duplicate:raise DuplicateBooking(duplicates)
  no=f'B{datetime.now().strftime("%y%m%d")}-{secrets.token_hex(3).upper()}'
- status='Confirmed' if source in ('manual','internal') else 'Pending'
+ status='Confirmed' if source in ('manual','internal') or int(clinic['direct_booking'] or 0)==1 else 'Pending'
  cur=db().execute('''INSERT INTO Bookings(booking_no,patient_name,age,address,phone,national_id,clinic_id,visit_date,appointment_time,service_type,status,source,instructions_snapshot,documents_snapshot,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(no,str(data['patient_name']).strip(),str(data.get('age','')).strip(),str(data.get('address','')).strip(),str(data['phone']).strip(),str(data.get('national_id','')).strip(),clinic['id'],data['visit_date'],data['appointment_time'],data['service_type'],status,source,service.get('instructions') or clinic['instructions'],clinic['documents'],now(),now()))
  bid=cur.lastrowid
  if status=='Confirmed':assign_queue(bid)
- db().execute('INSERT INTO Notifications(booking_id,message,created_at) VALUES(?,?,?)',(bid,'تم استلام طلب الحجز وسيتم تأكيده من موظف الحجز',now())); db().commit(); audit('create_booking','Booking',bid,source); return booking_json(booking_row(bid))
+ db().execute('INSERT INTO Notifications(booking_id,message,created_at) VALUES(?,?,?)',(bid,'تم تأكيد الحجز تلقائيًا وإصدار رقم الدخول' if status=='Confirmed' else 'تم استلام طلب الحجز وسيتم تأكيده من موظف الحجز',now())); db().commit(); audit('create_booking','Booking',bid,source); return booking_json(booking_row(bid))
 class DuplicateBooking(Exception):
  def __init__(self,items):self.items=items
 
@@ -309,11 +309,11 @@ def clinic_availability(cid):
 def create_clinic():
  data=request.get_json() or {}; required=['name','location','work_days','start_time','end_time','visit_minutes','daily_limit','services']
  if any(not data.get(x) for x in required):return jsonify(error='بيانات العيادة والخدمات مطلوبة'),400
- cur=db().execute('INSERT INTO Clinics(name,location,work_days,start_time,end_time,visit_minutes,daily_limit,services_json,documents,instructions) VALUES(?,?,?,?,?,?,?,?,?,?)',(data['name'],data['location'],data['work_days'],data['start_time'],data['end_time'],int(data['visit_minutes']),int(data['daily_limit']),json.dumps(data['services'],ensure_ascii=False),data.get('documents',''),data.get('instructions','')));db().commit();audit('create_clinic','Clinic',cur.lastrowid);return jsonify(clinic=clinic_dict(db().execute('SELECT * FROM Clinics WHERE id=?',(cur.lastrowid,)).fetchone())),201
+ cur=db().execute('INSERT INTO Clinics(name,location,work_days,start_time,end_time,visit_minutes,daily_limit,direct_booking,services_json,documents,instructions) VALUES(?,?,?,?,?,?,?,?,?,?,?)',(data['name'],data['location'],data['work_days'],data['start_time'],data['end_time'],int(data['visit_minutes']),int(data['daily_limit']),int(bool(data.get('direct_booking',False))),json.dumps(data['services'],ensure_ascii=False),data.get('documents',''),data.get('instructions','')));db().commit();audit('create_clinic','Clinic',cur.lastrowid);return jsonify(clinic=clinic_dict(db().execute('SELECT * FROM Clinics WHERE id=?',(cur.lastrowid,)).fetchone())),201
 @app.patch('/api/clinics/<int:cid>')
 @auth_required(MANAGERS)
 def update_clinic(cid):
- data=request.get_json() or {};allowed={k:data[k] for k in ['name','location','work_days','start_time','end_time','visit_minutes','daily_limit','documents','instructions','active'] if k in data}
+ data=request.get_json() or {};allowed={k:data[k] for k in ['name','location','work_days','start_time','end_time','visit_minutes','daily_limit','direct_booking','documents','instructions','active'] if k in data}
  if 'services' in data:allowed['services_json']=json.dumps(data['services'],ensure_ascii=False)
  if not allowed:return jsonify(error='لا توجد تغييرات'),400
  sql=','.join(f'{k}=?' for k in allowed);db().execute(f'UPDATE Clinics SET {sql} WHERE id=?',[*allowed.values(),cid]);db().commit();audit('update_clinic','Clinic',cid,json.dumps(data,ensure_ascii=False));return jsonify(clinic=clinic_dict(db().execute('SELECT * FROM Clinics WHERE id=?',(cid,)).fetchone()))
