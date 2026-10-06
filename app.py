@@ -229,6 +229,25 @@ def update_settings():
  if data.get('hospital_name'):values['hospital_name']=str(data['hospital_name']).strip()
  for key,value in values.items():db().execute('INSERT INTO SystemSettings(setting_key,setting_value,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=excluded.updated_at',(key,value,session.get('user_id'),now()))
  db().commit();audit('update_operating_mode','SystemSettings',None,json.dumps(values,ensure_ascii=False));return jsonify(mode=current_mode(),settings=values)
+@app.post('/api/settings/password')
+@auth_required({'founder'})
+def change_founder_password():
+ data=request.get_json() or {}
+ current=str(data.get('current_password',''))
+ new=str(data.get('new_password',''))
+ confirm=str(data.get('confirm_password',''))
+ u=db().execute("SELECT * FROM Users WHERE id=? AND role='founder' AND active=1",(session.get('user_id'),)).fetchone()
+ if not u or hash_password(current)!=u['password_hash']:
+  return jsonify(error='كلمة المرور الحالية غير صحيحة'),400
+ if len(new)<6:
+  return jsonify(error='كلمة المرور الجديدة يجب أن تكون 6 أحرف أو أرقام على الأقل'),400
+ if new!=confirm:
+  return jsonify(error='تأكيد كلمة المرور غير مطابق'),400
+ db().execute('UPDATE Users SET password_hash=? WHERE id=?',(hash_password(new),u['id']))
+ db().commit()
+ audit('change_password','User',u['id'],'تغيير كلمة مرور حساب المؤسس')
+ return jsonify(ok=True,message='تم تغيير كلمة مرور المؤسس بنجاح')
+
 @app.post('/api/login')
 def login():
  data=request.get_json() or {};u=db().execute('SELECT * FROM Users WHERE username=? AND active=1',(data.get('username',''),)).fetchone()
