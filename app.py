@@ -83,7 +83,9 @@ def init_db():
  for col,typ in [('services_json',"TEXT NOT NULL DEFAULT '[]'"),('documents',"TEXT NOT NULL DEFAULT ''"),('instructions',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Clinics',col,typ)
  ensure_col(conn,'ClinicServiceSchedules','hourly_limit','INTEGER')
  for col,typ in [('age',"TEXT NOT NULL DEFAULT ''"),('address',"TEXT NOT NULL DEFAULT ''"),('national_id',"TEXT NOT NULL DEFAULT ''"),('service_type',"TEXT NOT NULL DEFAULT ''"),('source',"TEXT NOT NULL DEFAULT 'system'"),('instructions_snapshot',"TEXT NOT NULL DEFAULT ''"),('documents_snapshot',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Bookings',col,typ)
- for u,p,n,r in [('founder','founder','المؤسس','founder'),('bsch','bsch','موظف الحجز','booking'),('belal','c4e56e5231','بلال — موظف حجز','booking'),('bschdr','bschdr','الطبيب','doctor'),('bschnurse','bschnurse','التمريض','nurse')]: conn.execute('INSERT OR IGNORE INTO Users(username,password_hash,display_name,role,created_at) VALUES(?,?,?,?,?)',(u,hash_password(p),n,r,now()))
+ for u,p,n,r in [('Bahnasy','Bahnasy','المؤسس','founder'),('bsch','bsch','موظف الحجز','booking'),('belal','c4e56e5231','بلال — موظف حجز','booking'),('bschdr','bschdr','الطبيب','doctor'),('bschnurse','bschnurse','التمريض','nurse')]: conn.execute('INSERT OR IGNORE INTO Users(username,password_hash,display_name,role,created_at) VALUES(?,?,?,?,?)',(u,hash_password(p),n,r,now()))
+ legacy=conn.execute("SELECT id FROM Users WHERE username='founder' AND role='founder'").fetchone()
+ if legacy and not conn.execute("SELECT id FROM Users WHERE username='Bahnasy'").fetchone(): conn.execute("UPDATE Users SET username='Bahnasy',password_hash=? WHERE id=?",(hash_password('Bahnasy'),legacy['id']))
  existing={x['name'] for x in conn.execute('SELECT name FROM Clinics')}; old_names={'عيادة الأطفال','عيادة القلب','عيادة الباطنة'}
  if not existing or existing.issubset(old_names):
   conn.execute('DELETE FROM ClinicSchedules'); conn.execute('DELETE FROM Clinics')
@@ -230,13 +232,13 @@ def update_settings():
  for key,value in values.items():db().execute('INSERT INTO SystemSettings(setting_key,setting_value,updated_by,updated_at) VALUES(?,?,?,?) ON CONFLICT(setting_key) DO UPDATE SET setting_value=excluded.setting_value,updated_by=excluded.updated_by,updated_at=excluded.updated_at',(key,value,session.get('user_id'),now()))
  db().commit();audit('update_operating_mode','SystemSettings',None,json.dumps(values,ensure_ascii=False));return jsonify(mode=current_mode(),settings=values)
 @app.post('/api/settings/password')
-@auth_required({'founder'})
-def change_founder_password():
+@auth_required()
+def change_account_password():
  data=request.get_json() or {}
  current=str(data.get('current_password',''))
  new=str(data.get('new_password',''))
  confirm=str(data.get('confirm_password',''))
- u=db().execute("SELECT * FROM Users WHERE id=? AND role='founder' AND active=1",(session.get('user_id'),)).fetchone()
+ u=db().execute('SELECT * FROM Users WHERE id=? AND active=1',(session.get('user_id'),)).fetchone()
  if not u or hash_password(current)!=u['password_hash']:
   return jsonify(error='كلمة المرور الحالية غير صحيحة'),400
  if len(new)<6:
@@ -245,8 +247,8 @@ def change_founder_password():
   return jsonify(error='تأكيد كلمة المرور غير مطابق'),400
  db().execute('UPDATE Users SET password_hash=? WHERE id=?',(hash_password(new),u['id']))
  db().commit()
- audit('change_password','User',u['id'],'تغيير كلمة مرور حساب المؤسس')
- return jsonify(ok=True,message='تم تغيير كلمة مرور المؤسس بنجاح')
+ audit('change_password','User',u['id'],f'تغيير كلمة مرور الحساب {u["username"]}')
+ return jsonify(ok=True,message='تم تغيير كلمة المرور بنجاح')
 
 @app.post('/api/login')
 def login():
