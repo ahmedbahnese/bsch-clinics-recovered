@@ -57,7 +57,7 @@ BSCH_HOST=0.0.0.0 BSCH_PORT=4173 ./scripts/hospital-server.sh
 
 | الدور | المستخدم | كلمة المرور |
 |---|---|---|
-| المؤسس | `Bahnasy` | `Bahnasy` |
+| المدير — Ahmed Bahnasy | `Bahnasy` | `Bahnasy` |
 | موظف الحجز | `bsch` | `bsch` |
 | الطبيب | `bschdr` | `bschdr` |
 | التمريض | `bschnurse` | `bschnurse` |

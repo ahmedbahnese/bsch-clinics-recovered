@@ -83,7 +83,8 @@ def init_db():
  for col,typ in [('services_json',"TEXT NOT NULL DEFAULT '[]'"),('documents',"TEXT NOT NULL DEFAULT ''"),('instructions',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Clinics',col,typ)
  ensure_col(conn,'ClinicServiceSchedules','hourly_limit','INTEGER')
  for col,typ in [('age',"TEXT NOT NULL DEFAULT ''"),('address',"TEXT NOT NULL DEFAULT ''"),('national_id',"TEXT NOT NULL DEFAULT ''"),('service_type',"TEXT NOT NULL DEFAULT ''"),('source',"TEXT NOT NULL DEFAULT 'system'"),('instructions_snapshot',"TEXT NOT NULL DEFAULT ''"),('documents_snapshot',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Bookings',col,typ)
- for u,p,n,r in [('Bahnasy','Bahnasy','المؤسس','founder'),('bsch','bsch','موظف الحجز','booking'),('belal','c4e56e5231','بلال — موظف حجز','booking'),('bschdr','bschdr','الطبيب','doctor'),('bschnurse','bschnurse','التمريض','nurse')]: conn.execute('INSERT OR IGNORE INTO Users(username,password_hash,display_name,role,created_at) VALUES(?,?,?,?,?)',(u,hash_password(p),n,r,now()))
+ for u,p,n,r in [('Bahnasy','Bahnasy','Ahmed Bahnasy','founder'),('bsch','bsch','موظف الحجز','booking'),('belal','c4e56e5231','بلال — موظف حجز','booking'),('bschdr','bschdr','الطبيب','doctor'),('bschnurse','bschnurse','التمريض','nurse')]: conn.execute('INSERT OR IGNORE INTO Users(username,password_hash,display_name,role,created_at) VALUES(?,?,?,?,?)',(u,hash_password(p),n,r,now()))
+ conn.execute("UPDATE Users SET display_name='Ahmed Bahnasy' WHERE username='Bahnasy' AND role='founder'")
  legacy=conn.execute("SELECT id FROM Users WHERE username='founder' AND role='founder'").fetchone()
  if legacy and not conn.execute("SELECT id FROM Users WHERE username='Bahnasy'").fetchone(): conn.execute("UPDATE Users SET username='Bahnasy',password_hash=? WHERE id=?",(hash_password('Bahnasy'),legacy['id']))
  existing={x['name'] for x in conn.execute('SELECT name FROM Clinics')}; old_names={'عيادة الأطفال','عيادة القلب','عيادة الباطنة'}
