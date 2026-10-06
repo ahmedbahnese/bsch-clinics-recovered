@@ -1,0 +1,1 @@
+{"routes":[{"path":"/","title":"الرئيسية"},{"path":"/book","title":"حجز موعد"},{"path":"/track","title":"متابعة حجز"},{"path":"/tv","title":"شاشة الانتظار"},{"path":"/queue","title":"شاشة الدور"},{"path":"/login","title":"دخول الموظفين"},{"path":"/dashboard","title":"الإعدادات"}]}

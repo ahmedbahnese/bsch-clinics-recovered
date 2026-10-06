@@ -213,6 +213,9 @@ def missing_fields(parsed):
 
 @app.route('/')
 def home():return render_template('index.html')
+@app.get('/manus-routes.json')
+def manus_routes():
+ return jsonify(routes=[{'path':'/','title':'الرئيسية'},{'path':'/book','title':'حجز موعد'},{'path':'/track','title':'متابعة حجز'},{'path':'/tv','title':'شاشة الانتظار'},{'path':'/queue','title':'شاشة الدور'},{'path':'/login','title':'دخول الموظفين'},{'path':'/dashboard','title':'الإعدادات'}])
 @app.get('/api/me')
 def me():u=user_row();return jsonify(user=dict(u) if u else None)
 @app.get('/api/runtime')
