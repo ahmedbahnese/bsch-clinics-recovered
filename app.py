@@ -152,8 +152,8 @@ def similar_bookings(data, exclude_id=None):
  if exclude_id:sql+=' AND b.id<>?';args.append(exclude_id)
  return [dict(x) for x in db().execute(sql,args).fetchall()]
 def validate_booking(data,source='system',exclude_id=None,allow_closed=False):
- required=['patient_name','phone','clinic_id','visit_date','appointment_time','service_type']
- if any(not str(data.get(x,'')).strip() for x in required):raise ValueError('الاسم والهاتف والعيادة والتاريخ والموعد ونوع الخدمة حقول مطلوبة')
+ required=['patient_name','phone','clinic_id','visit_date','service_type']
+ if any(not str(data.get(x,'')).strip() for x in required):raise ValueError('الاسم والهاتف والعيادة والتاريخ ونوع الخدمة حقول مطلوبة')
  clinic=db().execute('SELECT * FROM Clinics WHERE id=? AND active=1',(int(data['clinic_id']),)).fetchone()
  if not clinic:raise ValueError('العيادة غير متاحة')
  visit=date.fromisoformat(str(data['visit_date']))
@@ -164,14 +164,14 @@ def validate_booking(data,source='system',exclude_id=None,allow_closed=False):
  if not service:raise ValueError('نوع الخدمة غير متاح لهذه العيادة')
  if service.get('direct_only'):raise ValueError('هذه الخدمة بالحضور المباشر فقط ولا يمكن حجزها إلكترونيًا')
  ss=db().execute('SELECT * FROM ClinicServiceSchedules WHERE clinic_id=? AND service_name=? AND weekday=? AND active=1',(clinic['id'],service['name'],visit.weekday())).fetchall()
- if ss:
-  s=ss[0]; tm=str(data['appointment_time']);
+ if ss and data.get('appointment_time'):
+  s=ss[0]; tm=str(data['appointment_time'])
   if not (s['start_time']<=tm<=s['end_time']):raise ValueError('الموعد خارج أوقات الخدمة المتاحة')
  total=db().execute("SELECT COUNT(*) FROM Bookings WHERE clinic_id=? AND visit_date=? AND service_type=? AND status NOT IN ('Cancelled','NoShow')",(clinic['id'],data['visit_date'],data['service_type'])).fetchone()[0]
  limit=min(int(clinic['daily_limit']),int(service.get('limit') or clinic['daily_limit']))
  if ss and ss[0]['daily_limit']:limit=min(limit,int(ss[0]['daily_limit']))
  if total>=limit:raise ValueError('اكتملت الطاقة الاستيعابية لهذه الخدمة في هذا اليوم')
- if ss and ss[0]['hourly_limit']:
+ if ss and ss[0]['hourly_limit'] and data.get('appointment_time'):
   hour=str(data['appointment_time'])[:2]
   hourly=db().execute("SELECT COUNT(*) FROM Bookings WHERE clinic_id=? AND visit_date=? AND service_type=? AND substr(appointment_time,1,2)=? AND status NOT IN ('Cancelled','NoShow')",(clinic['id'],data['visit_date'],data['service_type'],hour)).fetchone()[0]
   if hourly>=int(ss[0]['hourly_limit']):raise ValueError('اكتملت سعة هذه الخدمة في هذه الساعة')
@@ -187,7 +187,7 @@ def make_booking(data,source='system',allow_duplicate=False):
  if duplicates and not allow_duplicate:raise DuplicateBooking(duplicates)
  no=f'B{datetime.now().strftime("%y%m%d")}-{secrets.token_hex(3).upper()}'
  status='Confirmed' if source in ('manual','internal') or int(clinic['direct_booking'] or 0)==1 else 'Pending'
- cur=db().execute('''INSERT INTO Bookings(booking_no,patient_name,age,address,phone,national_id,clinic_id,visit_date,appointment_time,service_type,status,source,instructions_snapshot,documents_snapshot,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(no,str(data['patient_name']).strip(),str(data.get('age','')).strip(),str(data.get('address','')).strip(),str(data['phone']).strip(),str(data.get('national_id','')).strip(),clinic['id'],data['visit_date'],data['appointment_time'],data['service_type'],status,source,service.get('instructions') or clinic['instructions'],clinic['documents'],now(),now()))
+ cur=db().execute('''INSERT INTO Bookings(booking_no,patient_name,age,address,phone,national_id,clinic_id,visit_date,appointment_time,service_type,status,source,instructions_snapshot,documents_snapshot,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',(no,str(data['patient_name']).strip(),str(data.get('age','')).strip(),str(data.get('address','')).strip(),str(data['phone']).strip(),str(data.get('national_id','')).strip(),clinic['id'],data['visit_date'],data.get('appointment_time',''),data['service_type'],status,source,service.get('instructions') or clinic['instructions'],clinic['documents'],now(),now()))
  bid=cur.lastrowid
  if status=='Confirmed':assign_queue(bid)
  db().execute('INSERT INTO Notifications(booking_id,message,created_at) VALUES(?,?,?)',(bid,'تم تأكيد الحجز تلقائيًا وإصدار رقم الدخول' if status=='Confirmed' else 'تم استلام طلب الحجز وسيتم تأكيده من موظف الحجز',now())); db().commit(); audit('create_booking','Booking',bid,source); return booking_json(booking_row(bid))
@@ -297,6 +297,14 @@ def user_update(uid):
   fields.append('password_hash=?');args.append(hash_password(d['password']))
  if not fields:return jsonify(error='لا توجد تغييرات'),400
  args.append(uid);db().execute('UPDATE Users SET '+','.join(fields)+' WHERE id=?',args);db().commit();audit('update_user','User',uid);return jsonify(ok=True)
+@app.delete('/api/users/<int:uid>')
+@auth_required({'founder'})
+def user_delete(uid):
+ u=db().execute('SELECT id,username,display_name FROM Users WHERE id=?',(uid,)).fetchone()
+ if not u:return jsonify(error='الحساب غير موجود'),404
+ if str(u['username']).lower()=='bahnasy' or str(u['display_name']).lower() in ('ahmed bahnasy','ahmed bahnasy'):
+  return jsonify(error='لا يمكن حذف حساب Ahmed Bahnasy'),403
+ db().execute('UPDATE Users SET active=0 WHERE id=?',(uid,));db().commit();audit('delete_user','User',uid,u['username']);return jsonify(ok=True)
 @app.post('/api/login')
 def login():
  data=request.get_json() or {};u=db().execute('SELECT * FROM Users WHERE username=? AND active=1',(data.get('username',''),)).fetchone()
