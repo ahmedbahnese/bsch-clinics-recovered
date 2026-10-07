@@ -328,8 +328,18 @@ def clinic_availability(cid):
   if str(day.weekday()) not in [x.strip() for x in clinic['work_days'].split(',')]:continue
   if db().execute('SELECT 1 FROM ClinicClosures WHERE clinic_id=? AND closure_date=?',(cid,day_s)).fetchone():continue
   total=db().execute("SELECT COUNT(*) FROM Bookings WHERE clinic_id=? AND visit_date=? AND status NOT IN ('Cancelled','NoShow')",(cid,day_s)).fetchone()[0]
-  if total>=int(clinic['daily_limit']):continue
-  items.append({'date':day_s,'weekday':day.strftime('%A'),'weekday_ar':['الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد'][day.weekday()],'label':day.strftime('%d/%m'),'remaining':max(0,int(clinic['daily_limit'])-total)})
+  services=jloads(clinic['services_json'])
+  available=[]
+  for svc in services:
+   if svc.get('direct_only'):continue
+   limit=int(svc.get('limit') or clinic['daily_limit'] or 0)
+   if limit<=0:continue
+   used=db().execute("SELECT COUNT(*) FROM Bookings WHERE clinic_id=? AND visit_date=? AND service_type=? AND status NOT IN ('Cancelled','NoShow')",(cid,day_s,svc.get('name',''))).fetchone()[0]
+   available.append(max(0,limit-used))
+  clinic_remaining=max(0,int(clinic['daily_limit'])-total) if int(clinic['daily_limit'])>0 else None
+  remaining=(min(clinic_remaining,max(available)) if available and clinic_remaining is not None else (max(available) if available else (clinic_remaining or 0)))
+  if remaining<=0:continue
+  items.append({'date':day_s,'weekday':day.strftime('%A'),'weekday_ar':['الإثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت','الأحد'][day.weekday()],'label':day.strftime('%d/%m'),'remaining':remaining})
   if len(items)>=30:break
  return jsonify(clinic=clinic_dict(clinic),dates=items)
 @app.post('/api/clinics')
