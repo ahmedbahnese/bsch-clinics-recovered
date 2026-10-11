@@ -13,7 +13,7 @@ clinics = ok(s.get(BASE + '/api/clinics'))['clinics']
 assert clinics
 runtime = ok(s.get(BASE + '/api/runtime'))
 assert runtime['mode'] in {'online', 'hospital_server', 'standalone_offline'}
-ok(s.post(BASE + '/api/login', json={'username':'founder','password':'founder'}))
+ok(s.post(BASE + '/api/login', json={'username':'Bahnasy','password':'Bahnasy'}))
 settings = ok(s.get(BASE + '/api/settings'))
 assert {x['id'] for x in settings['modes']} == {'online','hospital_server','standalone_offline'}
 

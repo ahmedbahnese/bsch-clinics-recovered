@@ -4,11 +4,13 @@ from pathlib import Path
 import csv, hashlib, io, json, os, re, secrets, sqlite3, urllib.request
 from zipfile import ZipFile, ZIP_DEFLATED
 from flask import Flask, jsonify, request, session, render_template, g, Response
+from db_compat import PGConnection, PGIntegrityError
 
 BASE_DIR = Path(__file__).resolve().parent
 DB_PATH = Path(os.environ.get('BSCH_DB_PATH', str(BASE_DIR / 'bsch_clinics.sqlite3'))).expanduser()
 app = Flask(__name__)
-app.config.update(SECRET_KEY=os.environ.get('BSCH_SECRET_KEY', secrets.token_hex(32)), SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE='Lax')
+cookie_secure=os.environ.get('BSCH_COOKIE_SECURE', '1' if os.environ.get('DATABASE_URL') else '0') == '1'
+app.config.update(SECRET_KEY=os.environ.get('BSCH_SECRET_KEY', secrets.token_hex(32)), SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SECURE=cookie_secure, SESSION_COOKIE_SAMESITE='None' if cookie_secure else 'Lax')
 ROLES = {'founder': 'المؤسس', 'booking': 'موظف الحجز', 'doctor': 'طبيب', 'nurse': 'تمريض'}
 MANAGERS = {'founder', 'booking'}
 TEMPLATE_VARS = ['patientName','clinicName','clinicDays','workingHours','queueNumber','trackingLink','hospitalName','serviceType','appointmentDate','appointmentTime']
@@ -36,7 +38,9 @@ DEFAULT_TEMPLATES = [
 
 def db():
  if 'db' not in g:
-  g.db=sqlite3.connect(DB_PATH); g.db.row_factory=sqlite3.Row; g.db.execute('PRAGMA foreign_keys=ON')
+  g.db=PGConnection(os.environ['DATABASE_URL']) if os.environ.get('DATABASE_URL') else sqlite3.connect(DB_PATH)
+  if not getattr(g.db, 'is_postgres', False):
+   g.db.row_factory=sqlite3.Row; g.db.execute('PRAGMA foreign_keys=ON')
  return g.db
 @app.teardown_appcontext
 def close_db(_=None):
@@ -57,10 +61,13 @@ def current_mode():
 def setting_bool(key, default=False): return setting(key,'1' if default else '0')=='1'
 def ensure_col(conn, table, col, typ):
  try: conn.execute(f'ALTER TABLE {table} ADD COLUMN {col} {typ}')
- except sqlite3.OperationalError: pass
+ except Exception:
+  if getattr(conn, 'is_postgres', False): conn.rollback()
 
 def init_db():
- conn=sqlite3.connect(DB_PATH); conn.row_factory=sqlite3.Row; conn.execute('PRAGMA foreign_keys=ON')
+ conn=PGConnection(os.environ['DATABASE_URL']) if os.environ.get('DATABASE_URL') else sqlite3.connect(DB_PATH)
+ if not getattr(conn, 'is_postgres', False):
+  conn.row_factory=sqlite3.Row; conn.execute('PRAGMA foreign_keys=ON')
  conn.executescript('''
  CREATE TABLE IF NOT EXISTS Users(id INTEGER PRIMARY KEY,username TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,display_name TEXT NOT NULL,role TEXT NOT NULL,active INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS SystemSettings(setting_key TEXT PRIMARY KEY,setting_value TEXT NOT NULL,updated_by INTEGER,updated_at TEXT NOT NULL);
@@ -80,6 +87,7 @@ def init_db():
  CREATE TABLE IF NOT EXISTS OutgoingMessages(id INTEGER PRIMARY KEY,channel TEXT NOT NULL,recipient TEXT NOT NULL DEFAULT '',message_text TEXT NOT NULL,template_key TEXT,booking_id INTEGER,status TEXT NOT NULL DEFAULT 'queued',error TEXT NOT NULL DEFAULT '',attempts INTEGER NOT NULL DEFAULT 0,sent_at TEXT,created_at TEXT NOT NULL);
  CREATE INDEX IF NOT EXISTS idx_bookings_phone ON Bookings(phone); CREATE INDEX IF NOT EXISTS idx_bookings_duplicate ON Bookings(patient_name,phone,clinic_id,visit_date); CREATE INDEX IF NOT EXISTS idx_queue_day ON QueueEntries(clinic_id,queue_date);
  ''')
+ if getattr(conn, 'is_postgres', False): conn.commit()
  for col,typ in [('direct_booking','INTEGER NOT NULL DEFAULT 0'),('services_json',"TEXT NOT NULL DEFAULT '[]'"),('documents',"TEXT NOT NULL DEFAULT ''"),('instructions',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Clinics',col,typ)
  ensure_col(conn,'ClinicServiceSchedules','hourly_limit','INTEGER')
  for col,typ in [('age',"TEXT NOT NULL DEFAULT ''"),('address',"TEXT NOT NULL DEFAULT ''"),('national_id',"TEXT NOT NULL DEFAULT ''"),('service_type',"TEXT NOT NULL DEFAULT ''"),('source',"TEXT NOT NULL DEFAULT 'system'"),('instructions_snapshot',"TEXT NOT NULL DEFAULT ''"),('documents_snapshot',"TEXT NOT NULL DEFAULT ''")]: ensure_col(conn,'Bookings',col,typ)
@@ -285,7 +293,7 @@ def user_create():
  if not username or len(password)<6 or not name or role not in ROLES:return jsonify(error='اسم المستخدم والاسم وكلمة مرور 6 أحرف والدور مطلوبة'),400
  try:
   cur=db().execute('INSERT INTO Users(username,password_hash,display_name,role,active,created_at) VALUES(?,?,?,?,1,?)',(username,hash_password(password),name,role,now()));db().commit();audit('create_user','User',cur.lastrowid,username);return jsonify(user=dict(db().execute('SELECT id,username,display_name,role,active,created_at FROM Users WHERE id=?',(cur.lastrowid,)).fetchone())),201
- except sqlite3.IntegrityError:return jsonify(error='اسم المستخدم مستخدم بالفعل'),409
+ except (sqlite3.IntegrityError, PGIntegrityError):return jsonify(error='اسم المستخدم مستخدم بالفعل'),409
 @app.patch('/api/users/<int:uid>')
 @auth_required({'founder'})
 def user_update(uid):

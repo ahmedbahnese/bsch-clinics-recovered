@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: bsch-clinics
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    healthCheckPath: /api/runtime
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: BSCH_SECRET_KEY
+        generateValue: true
+      - key: BSCH_OPERATING_MODE
+        value: online
+      - key: BSCH_COOKIE_SECURE
+        value: '1'
+      - key: PYTHON_VERSION
+        value: 3.11.11
